@@ -2,7 +2,7 @@
 
 This class uses the Modrinth API to get the latest project version for the given loader and minecraft version.
 
-This project is licensed under the **MIT License**.
+Licensed under the **MIT License**.
 
 ### Example Usage
 
