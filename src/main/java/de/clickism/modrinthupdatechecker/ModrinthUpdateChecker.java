@@ -33,6 +33,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.function.Consumer;
 
+/**
+ * Utility class to check for newer versions of a project hosted on Modrinth.
+ */
 public class ModrinthUpdateChecker {
 
     private static final String API_URL = "https://api.modrinth.com/v2/project/{id}/version";
@@ -44,6 +47,18 @@ public class ModrinthUpdateChecker {
 
     /**
      * Create a new update checker for the given project.
+     * This will check the latest version for the given loader and any minecraft version.
+     *
+     * @param projectId the project ID
+     * @param loader    the loader
+     */
+    public ModrinthUpdateChecker(String projectId, String loader) {
+        this(projectId, loader, null);
+    }
+
+    /**
+     * Create a new update checker for the given project.
+     * This will check the latest version for the given loader and minecraft version.
      *
      * @param projectId        the project ID
      * @param loader           the loader
@@ -111,9 +126,12 @@ public class ModrinthUpdateChecker {
                && loaders.contains(new JsonPrimitive(loader));
     }
 
-    /*
-     * Get the raw version from a version string.
+    /**
+     * Gets the raw version from a version string.
      * i.E: "fabric-1.2+1.17.1" -> "1.2"
+     *
+     * @param version the version string
+     * @return the raw version string
      */
     public static String getRawVersion(String version) {
         if (version.isEmpty()) return version;
