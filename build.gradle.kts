@@ -44,6 +44,7 @@ publishing {
             pom {
                 name.set("Modrinth Update Checker")
                 description.set("Single class Java library to check for newer versions of projects on Modrinth using the Modrinth API.")
+                url.set("https://github.com/Clickism/ModrinthUpdateChecker")
                 licenses {
                     license {
                         name.set("MIT License")
