@@ -1,10 +1,22 @@
 ## ⬆️ Modrinth Update Checker ⬆️
 
-This class uses the Modrinth API to get the latest project version for the given loader and minecraft version.
+This is a single class Java library to check for newer versions of projects on Modrinth using the Modrinth API.
 
 Licensed under the **MIT License**.
 
-### Example Usage
+### Adding to Your Project 📦
+Modrinth Update Checker is available on **Maven Central**. You can add it to your project using Maven or Gradle:
+```kotlin
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation("de.clickism:modrinth-update-checker:1.0")
+}
+```
+
+### How to Use 🛠️
 
 `ModrinthUpdateChecker#checkVersion(...)` will call the given callback with the latest version available on Modrinth.
 In case of an error while fetching the version, the callback won't be called and the checker will fail silently.
@@ -27,7 +39,7 @@ public class ExampleMod implements ModInitializer {
 
 Some extra logic is needed to check if a newer version is available.
 
-For Fabric:
+**For Fabric:**
 
 ```java
 public class ExampleMod implements ModInitializer {
@@ -53,7 +65,7 @@ public class ExampleMod implements ModInitializer {
 }
 ```
 
-For Spigot:
+**For Spigot:**
 
 ```java
 public class ExamplePlugin extends JavaPlugin {
