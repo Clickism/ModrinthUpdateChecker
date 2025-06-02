@@ -62,7 +62,8 @@ public class ModrinthUpdateChecker {
      * @param consumer the consumer
      */
     public void checkVersion(Consumer<String> consumer) {
-        try (HttpClient client = HttpClient.newHttpClient()) {
+        try {
+            HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(API_URL.replace("{id}", projectId)))
                     .GET()
