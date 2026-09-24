@@ -26,17 +26,21 @@ package de.clickism.modrinthupdatechecker;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -49,16 +53,12 @@ public class ModrinthUpdateChecker {
     // Parameters for the request
     private final String projectId;
     private final String loader;
-    @Nullable
-    private String minecraftVersion;
-    @Nullable
-    private Boolean featured = null;
+    private @Nullable String minecraftVersion;
+    private @Nullable Boolean featured = null;
     private boolean includeChangelog = false;
 
-    @Nullable
-    public Consumer<Exception> onError = null;
-    @Nullable
-    public Function<String, String> getRawVersion = ModrinthUpdateChecker::getRawVersion;
+    private @Nullable Consumer<Exception> onError = null;
+    private @NotNull Consumer<ModrinthVersion> onVersion = version -> {};
 
     /**
      * Create a new update checker for the given project.
@@ -74,49 +74,27 @@ public class ModrinthUpdateChecker {
 
     /**
      * Gets the raw version from a version string.
-     * i.E: "fabric-1.2+1.17.1" -> "1.2"
+     * <p>
+     * Strips any non-numeric characters and the minecraft version (must be after "+")
+     * from the version string.
+     * <p>
+     * Example:
+     * <ul>
+     *     <li>
+     *         <code>stripVersion("fabric-1.2+1.17.1")</code> returns <code>"1.2"</code>
+     *         <code>stripVersion("2.2.1+1.20.1-fabric")</code> returns <code>"2.2.1"</code>
+     *     </li>
+     * </ul>
      *
      * @param version the version string
      * @return the raw version string
      */
-    public static String getRawVersion(String version) {
+    public static String stripVersion(String version) {
         if (version.isEmpty()) return version;
         version = version.replaceAll("^\\D+", "");
         String[] split = version.split("\\+");
+        if (split.length == 0) return version;
         return split[0];
-    }
-
-    /**
-     * Check the latest version of the project for the given loader and minecraft version
-     * and call the consumer with it.
-     *
-     * @param consumer the consumer
-     */
-    public void checkVersion(Consumer<String> consumer) {
-        try {
-            HttpClient client = HttpClient.newHttpClient();
-            HttpRequest request = HttpRequest.newBuilder()
-                .uri(prepareURI())
-                .GET()
-                .build();
-
-            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                .thenAcceptAsync(response -> {
-                    if (response.statusCode() != 200) {
-                        handleError(new RuntimeException("wrong response status code: " + response.statusCode()));
-                        return;
-                    }
-                    JsonArray versionsArray = JsonParser.parseString(response.body()).getAsJsonArray();
-                    String latestVersion = getLatestVersion(versionsArray);
-                    if (latestVersion == null) {
-                        handleError(new RuntimeException("latest version is null"));
-                        return;
-                    }
-                    consumer.accept(latestVersion);
-                });
-        } catch (Exception e) {
-            handleError(e);
-        }
     }
 
     /**
@@ -131,30 +109,64 @@ public class ModrinthUpdateChecker {
     }
 
     /**
-     * Get the latest compatible version from the versions array.
+     * Finds and parses the latest compatible version from the versions array.
      *
-     * @param versions the versions array
-     * @return the latest compatible version
+     * @param versions The versions array
+     * @return The latest compatible version
      */
-    @Nullable
-    protected String getLatestVersion(JsonArray versions) {
-        return versions.asList().stream().findFirst()
+    private @Nullable ModrinthVersion parseLatestVersionIn(JsonArray versions) {
+        return versions.asList().stream()
+            .findFirst()
             .map(JsonElement::getAsJsonObject)
-            .map(version -> version.get("version_number").getAsString())
-            .map(getRawVersion != null
-                ? getRawVersion
-                : (v -> v))
+            .map(this::parseVersion)
             .orElse(null);
     }
 
     /**
-     * Prepare this request uri based on current parameters.
+     * Parse a version from the JSON object.
      *
-     * @return the request uri
+     * @param version the JSON object
+     * @return the parsed version
+     */
+    private ModrinthVersion parseVersion(JsonObject version) {
+        var name = version.get("name").getAsString();
+        var versionNumber = version.get("version_number").getAsString();
+        var changelog = version.has("changelog") && !version.get("changelog").isJsonNull()
+            ? version.get("changelog").getAsString()
+            : "";
+        var versionType = version.get("version_type").getAsString();
+        var featured = version.get("featured").getAsBoolean();
+        var dateString = version.get("date_published").getAsString();
+        var date = LocalDateTime.parse(dateString.substring(0, 19));
+        var downloads = version.get("downloads").getAsInt();
+        // Create object
+        return new ModrinthVersion(
+            name,
+            versionNumber,
+            changelog,
+            versionType,
+            featured,
+            date,
+            downloads
+        );
+    }
+
+    /**
+     * Prepare the request URI with the project ID and parameters.
+     *
+     * @return the request URI
      */
     private URI prepareURI() {
         var query = prepareParameters().entrySet().stream()
-            .map(entry -> entry.getKey() + '=' + entry.getValue())
+            .map(entry -> {
+                try {
+                    return URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8)
+                           + '='
+                           + URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8);
+                } catch (Exception e) {
+                    throw new RuntimeException("Error encoding query parameter: " + e.getMessage(), e);
+                }
+            })
             .collect(Collectors.joining("&"));
         var url = API_URL.replace("{id}", projectId) + '?' + query;
         return URI.create(url);
@@ -203,51 +215,179 @@ public class ModrinthUpdateChecker {
     }
 
     /**
-     * Function called on error calling the api.
+     * Callback for when an error occurs during the version check. If not set, errors will be ignored.
      *
-     * @param onError What should happen on error
-     * @return this
+     * @param onError The callback to call when an error occurs
+     * @return This update checker instance for method chaining
      */
     public ModrinthUpdateChecker onError(@Nullable Consumer<Exception> onError) {
         this.onError = onError;
         return this;
     }
 
+    /**
+     * Set the minecraft version to check for.
+     *
+     * @param minecraftVersion The minecraft version to check for
+     * @return This update checker instance for method chaining
+     */
     public ModrinthUpdateChecker minecraftVersion(@Nullable String minecraftVersion) {
         this.minecraftVersion = minecraftVersion;
         return this;
     }
 
+    /**
+     * Whether to include the changelog in the response. Default is false.
+     *
+     * @param includeChangelog Whether to include the changelog in the response
+     * @return This update checker instance for method chaining
+     */
     public ModrinthUpdateChecker includeChangelog(boolean includeChangelog) {
         this.includeChangelog = includeChangelog;
         return this;
     }
 
-    public static ModrinthUpdateChecker create(String projectId, String loader) {
+    /**
+     * Callback for when a version is found. If not set, the version will be ignored.
+     *
+     * @param onVersion The callback to call when a version is found
+     * @return This update checker instance for method chaining
+     */
+    public ModrinthUpdateChecker onVersion(@NotNull Consumer<ModrinthVersion> onVersion) {
+        this.onVersion = onVersion;
+        return this;
+    }
+
+    /**
+     * Callback for when a version is found. If not set, the version will be ignored.
+     *
+     * @param onVersion The callback to call when a version is found
+     * @return This update checker instance for method chaining
+     */
+    public ModrinthUpdateChecker onVersionString(@NotNull Consumer<String> onVersion) {
+        this.onVersion = version -> onVersion.accept(version.versionNumber());
+        return this;
+    }
+
+    /**
+     * Callback for when a version is found. If not set, the version will be ignored.
+     * The version string will be stripped of any non-numeric characters and the minecraft version.
+     *
+     * @param onVersion The callback to call when a version is found
+     * @return This update checker instance for method chaining
+     */
+    public ModrinthUpdateChecker onStrippedVersionString(@NotNull Consumer<String> onVersion) {
+        this.onVersion = version -> onVersion.accept(stripVersion(version.versionNumber()));
+        return this;
+    }
+
+    /**
+     * Checks for the latest version of the project and calls the onVersion callback with it.
+     *
+     * @return This update checker instance for method chaining
+     */
+    private ModrinthUpdateChecker check(boolean async) {
+        try {
+            var client = HttpClient.newHttpClient();
+            var request = HttpRequest.newBuilder()
+                .uri(prepareURI())
+                .GET()
+                .build();
+
+            if (async) {
+                // Send async
+                client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenAcceptAsync(this::handleResponse);
+            } else {
+                // Send sync
+                var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                handleResponse(response);
+            }
+        } catch (Exception e) {
+            handleError(e);
+        }
+        return this;
+    }
+
+    /**
+     * Handles the response from the Modrinth API.
+     *
+     * @param response The HTTP response
+     */
+    private void handleResponse(HttpResponse<String> response) {
+        if (response.statusCode() != 200) {
+            handleError(new RuntimeException("wrong response status code: " + response.statusCode()));
+            return;
+        }
+        JsonArray versionsArray = JsonParser.parseString(response.body()).getAsJsonArray();
+        ModrinthVersion latestVersion = parseLatestVersionIn(versionsArray);
+        if (latestVersion == null) {
+            handleError(new RuntimeException("latest version is null"));
+            return;
+        }
+        // Call callback
+        onVersion.accept(latestVersion);
+    }
+
+
+    /**
+     * Checks for the latest version of the project and calls the onVersion callback with it.
+     * This method is asynchronous and the onVersion callback will be called when the response is received.
+     *
+     * @return This update checker instance for method chaining
+     */
+    public ModrinthUpdateChecker check() {
+        return check(true);
+    }
+
+    /**
+     * Checks for the latest version of the project and calls the onVersion callback with it.
+     * This method is synchronous and will block until the response is received.
+     *
+     * @return This update checker instance for method chaining
+     */
+    public ModrinthUpdateChecker checkAndWait() {
+        return check(false);
+    }
+
+    /**
+     * Creates a new update checker for the given project and loader.
+     *
+     * @param projectId The project ID
+     * @param loader    The loader
+     * @return A new update checker instance
+     */
+    public static ModrinthUpdateChecker loader(String projectId, String loader) {
         return new ModrinthUpdateChecker(projectId, loader);
     }
 
+    /**
+     * Creates a new update checker for the given project and the Fabric loader.
+     *
+     * @param projectId The project ID
+     * @return A new update checker instance for Fabric
+     */
     public static ModrinthUpdateChecker fabric(String projectId) {
         return new ModrinthUpdateChecker(projectId, "fabric");
     }
 
+    /**
+     * Creates a new update checker for the given project and the Forge loader.
+     *
+     * @param projectId The project ID
+     * @return A new update checker instance for Forge
+     */
     public static ModrinthUpdateChecker forge(String projectId) {
         return new ModrinthUpdateChecker(projectId, "forge");
     }
 
+    /**
+     * Creates a new update checker for the given project and the NeoForge loader.
+     *
+     * @param projectId The project ID
+     * @return A new update checker instance for NeoForge
+     */
     public static ModrinthUpdateChecker neoforge(String projectId) {
         return new ModrinthUpdateChecker(projectId, "neoforge");
-    }
-
-    /**
-     * Set the function to get raw version from the modrinth version.
-     * If null provided raw version will act as in the identity function.
-     *
-     * @param getRawVersion The function transforming modrinth version to raw version
-     * @return this
-     */
-    public ModrinthUpdateChecker setGetRawVersion(@Nullable Function<String, String> getRawVersion) {
-        this.getRawVersion = getRawVersion;
-        return this;
     }
 }

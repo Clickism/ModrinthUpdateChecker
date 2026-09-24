@@ -15,12 +15,20 @@ repositories {
 dependencies {
     implementation("com.google.code.gson:gson:2.10")
     compileOnly("org.jetbrains:annotations:24.0.0")
+
+    // Testing
+    testImplementation(platform("org.junit:junit-bom:6.0.0"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 java {
     toolchain.languageVersion.set(JavaLanguageVersion.of(17))
 }
 
+tasks.test {
+    useJUnitPlatform()
+}
 
 tasks.register<Jar>("sourcesJar") {
     from(sourceSets.main.get().allSource)
