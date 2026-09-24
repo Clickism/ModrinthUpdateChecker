@@ -24,7 +24,9 @@
 
 package de.clickism.modrinthupdatechecker;
 
-import com.google.gson.*;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
 import org.jetbrains.annotations.Nullable;
 
 import java.net.URI;
@@ -44,18 +46,17 @@ public class ModrinthUpdateChecker {
 
     private static final String API_URL = "https://api.modrinth.com/v2/project/{id}/version";
 
+    // Parameters for the request
     private final String projectId;
     private final String loader;
     @Nullable
     private final String minecraftVersion;
-
-    @Nullable
-    private Boolean featured = null;
-
     @Nullable
     public Consumer<Exception> onError = null;
     @Nullable
     public Function<String, String> getRawVersion = ModrinthUpdateChecker::getRawVersion;
+    @Nullable
+    private Boolean featured = null;
 
     /**
      * Create a new update checker for the given project.
@@ -83,56 +84,6 @@ public class ModrinthUpdateChecker {
     }
 
     /**
-     * Check the latest version of the project for the given loader and minecraft version
-     * and call the consumer with it.
-     *
-     * @param consumer the consumer
-     */
-    public void checkVersion(Consumer<String> consumer) {
-        try {
-            HttpClient client = HttpClient.newHttpClient();
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(prepareURI())
-                    .GET()
-                    .build();
-
-            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                    .thenAcceptAsync(response -> {
-                        if (response.statusCode() != 200) {
-                            if(onError != null)
-                                onError.accept(new RuntimeException("wrong response status code: " + response.statusCode()));
-                            return;
-                        }
-                        JsonArray versionsArray = JsonParser.parseString(response.body()).getAsJsonArray();
-                        String latestVersion = getLatestVersion(versionsArray);
-                        if (latestVersion == null) {
-                            if(onError != null)
-                                onError.accept(new RuntimeException("latest version is null"));
-                            return;
-                        }
-                        consumer.accept(latestVersion);
-                    });
-        } catch (Exception e) {
-            if(onError != null) onError.accept(e);
-        }
-    }
-
-    /**
-     * Get the latest compatible version from the versions array.
-     *
-     * @param versions the versions array
-     * @return the latest compatible version
-     */
-    @Nullable
-    protected String getLatestVersion(JsonArray versions) {
-        return versions.asList().stream().findFirst()
-                .map(JsonElement::getAsJsonObject)
-                .map(version -> version.get("version_number").getAsString())
-                .map(getRawVersion != null ? getRawVersion : (v -> v))
-                .orElse(null);
-    }
-
-    /**
      * Gets the raw version from a version string.
      * i.E: "fabric-1.2+1.17.1" -> "1.2"
      *
@@ -147,7 +98,60 @@ public class ModrinthUpdateChecker {
     }
 
     /**
+     * Check the latest version of the project for the given loader and minecraft version
+     * and call the consumer with it.
+     *
+     * @param consumer the consumer
+     */
+    public void checkVersion(Consumer<String> consumer) {
+        try {
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(prepareURI())
+                .GET()
+                .build();
+
+            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenAcceptAsync(response -> {
+                    if (response.statusCode() != 200) {
+                        if (onError != null)
+                            onError.accept(new RuntimeException("wrong response status code: " + response.statusCode()));
+                        return;
+                    }
+                    JsonArray versionsArray = JsonParser.parseString(response.body()).getAsJsonArray();
+                    String latestVersion = getLatestVersion(versionsArray);
+                    if (latestVersion == null) {
+                        if (onError != null)
+                            onError.accept(new RuntimeException("latest version is null"));
+                        return;
+                    }
+                    consumer.accept(latestVersion);
+                });
+        } catch (Exception e) {
+            if (onError != null) onError.accept(e);
+        }
+    }
+
+    /**
+     * Get the latest compatible version from the versions array.
+     *
+     * @param versions the versions array
+     * @return the latest compatible version
+     */
+    @Nullable
+    protected String getLatestVersion(JsonArray versions) {
+        return versions.asList().stream().findFirst()
+            .map(JsonElement::getAsJsonObject)
+            .map(version -> version.get("version_number").getAsString())
+            .map(getRawVersion != null
+                ? getRawVersion
+                : (v -> v))
+            .orElse(null);
+    }
+
+    /**
      * Prepare this request uri based on current parameters.
+     *
      * @return the request uri
      */
     private URI prepareURI() {
@@ -169,12 +173,12 @@ public class ModrinthUpdateChecker {
      *
      * @return a map of key-value map of the request parameters
      */
-    private Map<String, String> prepareParameters(){
+    private Map<String, String> prepareParameters() {
         var parameters = new HashMap<String, String>();
 
         parameters.put("loaders", List.of(loader).toString());
-        if(minecraftVersion != null) parameters.put("game_versions", List.of(minecraftVersion).toString());
-        if(featured != null) parameters.put("featured", featured.toString());
+        if (minecraftVersion != null) parameters.put("game_versions", List.of(minecraftVersion).toString());
+        if (featured != null) parameters.put("featured", featured.toString());
 
         parameters.put("include_changelog", "false");
         return parameters;
@@ -183,6 +187,7 @@ public class ModrinthUpdateChecker {
     /**
      * Only get featured or non-featured versions.
      * Null represent no filter.
+     *
      * @param featured should be restricted to featured version ? default null if not called
      * @return this
      */
@@ -193,6 +198,7 @@ public class ModrinthUpdateChecker {
 
     /**
      * Function called on error calling the api.
+     *
      * @param onError What should happen on error
      * @return this
      */
@@ -204,6 +210,7 @@ public class ModrinthUpdateChecker {
     /**
      * Set the function to get raw version from the modrinth version.
      * If null provided raw version will act as in the identity function.
+     *
      * @param getRawVersion The function transforming modrinth version to raw version
      * @return this
      */
