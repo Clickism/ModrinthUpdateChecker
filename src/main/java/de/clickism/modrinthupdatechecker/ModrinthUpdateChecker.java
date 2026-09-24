@@ -34,10 +34,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Utility class to check for newer versions of a project hosted on Modrinth.
@@ -50,13 +50,15 @@ public class ModrinthUpdateChecker {
     private final String projectId;
     private final String loader;
     @Nullable
-    private final String minecraftVersion;
+    private String minecraftVersion;
+    @Nullable
+    private Boolean featured = null;
+    private boolean includeChangelog = false;
+
     @Nullable
     public Consumer<Exception> onError = null;
     @Nullable
     public Function<String, String> getRawVersion = ModrinthUpdateChecker::getRawVersion;
-    @Nullable
-    private Boolean featured = null;
 
     /**
      * Create a new update checker for the given project.
@@ -65,22 +67,9 @@ public class ModrinthUpdateChecker {
      * @param projectId the project ID
      * @param loader    the loader
      */
-    public ModrinthUpdateChecker(String projectId, String loader) {
-        this(projectId, loader, null);
-    }
-
-    /**
-     * Create a new update checker for the given project.
-     * This will check the latest version for the given loader and minecraft version.
-     *
-     * @param projectId        the project ID
-     * @param loader           the loader
-     * @param minecraftVersion the minecraft version, or null for any version
-     */
-    public ModrinthUpdateChecker(String projectId, String loader, @Nullable String minecraftVersion) {
+    protected ModrinthUpdateChecker(String projectId, String loader) {
         this.projectId = projectId;
         this.loader = loader;
-        this.minecraftVersion = minecraftVersion;
     }
 
     /**
@@ -114,21 +103,30 @@ public class ModrinthUpdateChecker {
             client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenAcceptAsync(response -> {
                     if (response.statusCode() != 200) {
-                        if (onError != null)
-                            onError.accept(new RuntimeException("wrong response status code: " + response.statusCode()));
+                        handleError(new RuntimeException("wrong response status code: " + response.statusCode()));
                         return;
                     }
                     JsonArray versionsArray = JsonParser.parseString(response.body()).getAsJsonArray();
                     String latestVersion = getLatestVersion(versionsArray);
                     if (latestVersion == null) {
-                        if (onError != null)
-                            onError.accept(new RuntimeException("latest version is null"));
+                        handleError(new RuntimeException("latest version is null"));
                         return;
                     }
                     consumer.accept(latestVersion);
                 });
         } catch (Exception e) {
-            if (onError != null) onError.accept(e);
+            handleError(e);
+        }
+    }
+
+    /**
+     * Handle an error by calling the onError consumer if it is set.
+     *
+     * @param exception the exception
+     */
+    private void handleError(Exception exception) {
+        if (onError != null) {
+            onError.accept(exception);
         }
     }
 
@@ -155,17 +153,11 @@ public class ModrinthUpdateChecker {
      * @return the request uri
      */
     private URI prepareURI() {
-        var url = new StringBuilder(API_URL.replace("{id}", projectId));
-
-        var parameters = prepareParameters();
-        String[] paramArray = new String[parameters.size()];
-        int i = 0;
-        for (Map.Entry<String, String> entry : parameters.entrySet()) {
-            paramArray[i++] = entry.getKey() + '=' + entry.getValue();
-        }
-        url.append('?').append(String.join("&", paramArray));
-
-        return URI.create(url.toString());
+        var query = prepareParameters().entrySet().stream()
+            .map(entry -> entry.getKey() + '=' + entry.getValue())
+            .collect(Collectors.joining("&"));
+        var url = API_URL.replace("{id}", projectId) + '?' + query;
+        return URI.create(url);
     }
 
     /**
@@ -176,22 +168,36 @@ public class ModrinthUpdateChecker {
     private Map<String, String> prepareParameters() {
         var parameters = new HashMap<String, String>();
 
-        parameters.put("loaders", List.of(loader).toString());
-        if (minecraftVersion != null) parameters.put("game_versions", List.of(minecraftVersion).toString());
-        if (featured != null) parameters.put("featured", featured.toString());
+        parameters.put("loaders", formatAsArray(loader));
+        if (minecraftVersion != null) {
+            parameters.put("game_versions", formatAsArray(minecraftVersion));
+        }
+        if (featured != null) {
+            parameters.put("featured", featured.toString());
+        }
+        parameters.put("include_changelog", String.valueOf(includeChangelog));
 
-        parameters.put("include_changelog", "false");
         return parameters;
     }
 
     /**
-     * Only get featured or non-featured versions.
-     * Null represent no filter.
+     * Format a value as an array for the request parameters.
+     * Modrinth API expects arrays to be formatted as ["value"].
      *
-     * @param featured should be restricted to featured version ? default null if not called
-     * @return this
+     * @param value the value
+     * @return the formatted value
      */
-    public ModrinthUpdateChecker setFeatured(@Nullable Boolean featured) {
+    private String formatAsArray(String value) {
+        return "[\"" + value + "\"]";
+    }
+
+    /**
+     * Only get featured or non-featured versions, or null for all versions.
+     *
+     * @param featured Whether to only get featured versions, non-featured versions, or null for all versions
+     * @return This update checker instance for method chaining
+     */
+    public ModrinthUpdateChecker onlyFeatured(@Nullable Boolean featured) {
         this.featured = featured;
         return this;
     }
@@ -202,9 +208,35 @@ public class ModrinthUpdateChecker {
      * @param onError What should happen on error
      * @return this
      */
-    public ModrinthUpdateChecker setOnError(@Nullable Consumer<Exception> onError) {
+    public ModrinthUpdateChecker onError(@Nullable Consumer<Exception> onError) {
         this.onError = onError;
         return this;
+    }
+
+    public ModrinthUpdateChecker minecraftVersion(@Nullable String minecraftVersion) {
+        this.minecraftVersion = minecraftVersion;
+        return this;
+    }
+
+    public ModrinthUpdateChecker includeChangelog(boolean includeChangelog) {
+        this.includeChangelog = includeChangelog;
+        return this;
+    }
+
+    public static ModrinthUpdateChecker create(String projectId, String loader) {
+        return new ModrinthUpdateChecker(projectId, loader);
+    }
+
+    public static ModrinthUpdateChecker fabric(String projectId) {
+        return new ModrinthUpdateChecker(projectId, "fabric");
+    }
+
+    public static ModrinthUpdateChecker forge(String projectId) {
+        return new ModrinthUpdateChecker(projectId, "forge");
+    }
+
+    public static ModrinthUpdateChecker neoforge(String projectId) {
+        return new ModrinthUpdateChecker(projectId, "neoforge");
     }
 
     /**
