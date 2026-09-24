@@ -31,7 +31,11 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Utility class to check for newer versions of a project hosted on Modrinth.
@@ -44,6 +48,14 @@ public class ModrinthUpdateChecker {
     private final String loader;
     @Nullable
     private final String minecraftVersion;
+
+    @Nullable
+    private Boolean featured = null;
+
+    @Nullable
+    public Consumer<Exception> onError = null;
+    @Nullable
+    public Function<String, String> getRawVersion = ModrinthUpdateChecker::getRawVersion;
 
     /**
      * Create a new update checker for the given project.
@@ -80,19 +92,28 @@ public class ModrinthUpdateChecker {
         try {
             HttpClient client = HttpClient.newHttpClient();
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(API_URL.replace("{id}", projectId)))
+                    .uri(prepareURI())
                     .GET()
                     .build();
 
             client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                     .thenAcceptAsync(response -> {
-                        if (response.statusCode() != 200) return;
+                        if (response.statusCode() != 200) {
+                            if(onError != null)
+                                onError.accept(new RuntimeException("wrong response status code: " + response.statusCode()));
+                            return;
+                        }
                         JsonArray versionsArray = JsonParser.parseString(response.body()).getAsJsonArray();
                         String latestVersion = getLatestVersion(versionsArray);
-                        if (latestVersion == null) return;
+                        if (latestVersion == null) {
+                            if(onError != null)
+                                onError.accept(new RuntimeException("latest version is null"));
+                            return;
+                        }
                         consumer.accept(latestVersion);
                     });
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            if(onError != null) onError.accept(e);
         }
     }
 
@@ -104,26 +125,11 @@ public class ModrinthUpdateChecker {
      */
     @Nullable
     protected String getLatestVersion(JsonArray versions) {
-        return versions.asList().stream()
+        return versions.asList().stream().findFirst()
                 .map(JsonElement::getAsJsonObject)
-                .filter(this::isVersionCompatible)
                 .map(version -> version.get("version_number").getAsString())
-                .map(ModrinthUpdateChecker::getRawVersion)
-                .max(String::compareTo)
+                .map(getRawVersion != null ? getRawVersion : (v -> v))
                 .orElse(null);
-    }
-
-    /**
-     * Check if the version is compatible for the given loader and minecraft version.
-     *
-     * @param version the version
-     * @return true if the version is valid
-     */
-    protected boolean isVersionCompatible(JsonObject version) {
-        JsonArray versions = version.get("game_versions").getAsJsonArray();
-        JsonArray loaders = version.get("loaders").getAsJsonArray();
-        return (minecraftVersion == null || versions.contains(new JsonPrimitive(minecraftVersion)))
-               && loaders.contains(new JsonPrimitive(loader));
     }
 
     /**
@@ -138,5 +144,71 @@ public class ModrinthUpdateChecker {
         version = version.replaceAll("^\\D+", "");
         String[] split = version.split("\\+");
         return split[0];
+    }
+
+    /**
+     * Prepare this request uri based on current parameters.
+     * @return the request uri
+     */
+    private URI prepareURI() {
+        var url = new StringBuilder(API_URL.replace("{id}", projectId));
+
+        var parameters = prepareParameters();
+        String[] paramArray = new String[parameters.size()];
+        int i = 0;
+        for (Map.Entry<String, String> entry : parameters.entrySet()) {
+            paramArray[i++] = entry.getKey() + '=' + entry.getValue();
+        }
+        url.append('?').append(String.join("&", paramArray));
+
+        return URI.create(url.toString());
+    }
+
+    /**
+     * Get the parameters for the version request.
+     *
+     * @return a map of key-value map of the request parameters
+     */
+    private Map<String, String> prepareParameters(){
+        var parameters = new HashMap<String, String>();
+
+        parameters.put("loaders", List.of(loader).toString());
+        if(minecraftVersion != null) parameters.put("game_versions", List.of(minecraftVersion).toString());
+        if(featured != null) parameters.put("featured", featured.toString());
+
+        parameters.put("include_changelog", "false");
+        return parameters;
+    }
+
+    /**
+     * Only get featured or non-featured versions.
+     * Null represent no filter.
+     * @param featured should be restricted to featured version ? default null if not called
+     * @return this
+     */
+    public ModrinthUpdateChecker setFeatured(@Nullable Boolean featured) {
+        this.featured = featured;
+        return this;
+    }
+
+    /**
+     * Function called on error calling the api.
+     * @param onError What should happen on error
+     * @return this
+     */
+    public ModrinthUpdateChecker setOnError(@Nullable Consumer<Exception> onError) {
+        this.onError = onError;
+        return this;
+    }
+
+    /**
+     * Set the function to get raw version from the modrinth version.
+     * If null provided raw version will act as in the identity function.
+     * @param getRawVersion The function transforming modrinth version to raw version
+     * @return this
+     */
+    public ModrinthUpdateChecker setGetRawVersion(@Nullable Function<String, String> getRawVersion) {
+        this.getRawVersion = getRawVersion;
+        return this;
     }
 }
