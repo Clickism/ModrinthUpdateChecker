@@ -98,6 +98,115 @@ public class ModrinthUpdateChecker {
     }
 
     /**
+     * Creates a new update checker for the given project and loader.
+     *
+     * @param projectId The project ID
+     * @param loader    The loader
+     * @return A new update checker instance
+     */
+    public static ModrinthUpdateChecker loader(String projectId, String loader) {
+        return new ModrinthUpdateChecker(projectId, loader);
+    }
+
+    /**
+     * Creates a new update checker for the given project and the Fabric loader.
+     *
+     * @param projectId The project ID
+     * @return A new update checker instance for Fabric
+     */
+    public static ModrinthUpdateChecker fabric(String projectId) {
+        return new ModrinthUpdateChecker(projectId, "fabric");
+    }
+
+    /**
+     * Creates a new update checker for the given project and the Forge loader.
+     *
+     * @param projectId The project ID
+     * @return A new update checker instance for Forge
+     */
+    public static ModrinthUpdateChecker forge(String projectId) {
+        return new ModrinthUpdateChecker(projectId, "forge");
+    }
+
+    /**
+     * Creates a new update checker for the given project and the NeoForge loader.
+     *
+     * @param projectId The project ID
+     * @return A new update checker instance for NeoForge
+     */
+    public static ModrinthUpdateChecker neoforge(String projectId) {
+        return new ModrinthUpdateChecker(projectId, "neoforge");
+    }
+
+    /**
+     * Checks for the latest version of the project and calls the onVersion callback with it.
+     *
+     * @return This update checker instance for method chaining
+     */
+    private ModrinthUpdateChecker check(boolean async) {
+        try {
+            var client = HttpClient.newHttpClient();
+            var request = HttpRequest.newBuilder()
+                .uri(prepareURI())
+                .GET()
+                .build();
+
+            if (async) {
+                // Send async
+                client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenAcceptAsync(this::handleResponse);
+            } else {
+                // Send sync
+                var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+                handleResponse(response);
+            }
+        } catch (Exception e) {
+            handleError(e);
+        }
+        return this;
+    }
+
+    /**
+     * Handles the response from the Modrinth API.
+     *
+     * @param response The HTTP response
+     */
+    private void handleResponse(HttpResponse<String> response) {
+        if (response.statusCode() != 200) {
+            handleError(new RuntimeException("wrong response status code: " + response.statusCode()));
+            return;
+        }
+        JsonArray versionsArray = JsonParser.parseString(response.body()).getAsJsonArray();
+        ModrinthVersion latestVersion = parseLatestVersionIn(versionsArray);
+        if (latestVersion == null) {
+            handleError(new RuntimeException("latest version is null"));
+            return;
+        }
+        // Call callback
+        onVersion.accept(latestVersion);
+    }
+
+    /**
+     * Checks for the latest version of the project and calls the onVersion callback with it.
+     * This method is asynchronous and the onVersion callback will be called when the response is received.
+     *
+     * @return This update checker instance for method chaining
+     */
+    public ModrinthUpdateChecker check() {
+        return check(true);
+    }
+
+    /**
+     * Checks for the latest version of the project and calls the onVersion callback with it.
+     * This method is synchronous and will block until the response is received.
+     *
+     * @return This update checker instance for method chaining
+     */
+    public ModrinthUpdateChecker checkAndWait() {
+        return check(false);
+    }
+
+    /**
      * Handle an error by calling the onError consumer if it is set.
      *
      * @param exception the exception
@@ -279,115 +388,5 @@ public class ModrinthUpdateChecker {
     public ModrinthUpdateChecker onStrippedVersionString(@NotNull Consumer<String> onVersion) {
         this.onVersion = version -> onVersion.accept(stripVersion(version.versionNumber()));
         return this;
-    }
-
-    /**
-     * Checks for the latest version of the project and calls the onVersion callback with it.
-     *
-     * @return This update checker instance for method chaining
-     */
-    private ModrinthUpdateChecker check(boolean async) {
-        try {
-            var client = HttpClient.newHttpClient();
-            var request = HttpRequest.newBuilder()
-                .uri(prepareURI())
-                .GET()
-                .build();
-
-            if (async) {
-                // Send async
-                client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                    .thenAcceptAsync(this::handleResponse);
-            } else {
-                // Send sync
-                var response = client.send(request, HttpResponse.BodyHandlers.ofString());
-                handleResponse(response);
-            }
-        } catch (Exception e) {
-            handleError(e);
-        }
-        return this;
-    }
-
-    /**
-     * Handles the response from the Modrinth API.
-     *
-     * @param response The HTTP response
-     */
-    private void handleResponse(HttpResponse<String> response) {
-        if (response.statusCode() != 200) {
-            handleError(new RuntimeException("wrong response status code: " + response.statusCode()));
-            return;
-        }
-        JsonArray versionsArray = JsonParser.parseString(response.body()).getAsJsonArray();
-        ModrinthVersion latestVersion = parseLatestVersionIn(versionsArray);
-        if (latestVersion == null) {
-            handleError(new RuntimeException("latest version is null"));
-            return;
-        }
-        // Call callback
-        onVersion.accept(latestVersion);
-    }
-
-
-    /**
-     * Checks for the latest version of the project and calls the onVersion callback with it.
-     * This method is asynchronous and the onVersion callback will be called when the response is received.
-     *
-     * @return This update checker instance for method chaining
-     */
-    public ModrinthUpdateChecker check() {
-        return check(true);
-    }
-
-    /**
-     * Checks for the latest version of the project and calls the onVersion callback with it.
-     * This method is synchronous and will block until the response is received.
-     *
-     * @return This update checker instance for method chaining
-     */
-    public ModrinthUpdateChecker checkAndWait() {
-        return check(false);
-    }
-
-    /**
-     * Creates a new update checker for the given project and loader.
-     *
-     * @param projectId The project ID
-     * @param loader    The loader
-     * @return A new update checker instance
-     */
-    public static ModrinthUpdateChecker loader(String projectId, String loader) {
-        return new ModrinthUpdateChecker(projectId, loader);
-    }
-
-    /**
-     * Creates a new update checker for the given project and the Fabric loader.
-     *
-     * @param projectId The project ID
-     * @return A new update checker instance for Fabric
-     */
-    public static ModrinthUpdateChecker fabric(String projectId) {
-        return new ModrinthUpdateChecker(projectId, "fabric");
-    }
-
-    /**
-     * Creates a new update checker for the given project and the Forge loader.
-     *
-     * @param projectId The project ID
-     * @return A new update checker instance for Forge
-     */
-    public static ModrinthUpdateChecker forge(String projectId) {
-        return new ModrinthUpdateChecker(projectId, "forge");
-    }
-
-    /**
-     * Creates a new update checker for the given project and the NeoForge loader.
-     *
-     * @param projectId The project ID
-     * @return A new update checker instance for NeoForge
-     */
-    public static ModrinthUpdateChecker neoforge(String projectId) {
-        return new ModrinthUpdateChecker(projectId, "neoforge");
     }
 }
