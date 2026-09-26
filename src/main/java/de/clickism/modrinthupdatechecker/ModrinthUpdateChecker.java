@@ -82,6 +82,8 @@ public class ModrinthUpdateChecker {
      * <ul>
      *     <li>
      *         <code>stripVersion("fabric-1.2+1.17.1")</code> returns <code>"1.2"</code>
+     *     </li>
+     *     <li>
      *         <code>stripVersion("2.2.1+1.20.1-fabric")</code> returns <code>"2.2.1"</code>
      *     </li>
      * </ul>
