@@ -139,6 +139,26 @@ public class ModrinthUpdateChecker {
     }
 
     /**
+     * Creates a new update checker for the given project and the Paper loader.
+     *
+     * @param projectId The project ID
+     * @return A new update checker instance for Paper
+     */
+    public static ModrinthUpdateChecker paper(String projectId) {
+        return new ModrinthUpdateChecker(projectId, "paper");
+    }
+
+    /**
+     * Creates a new update checker for the given project and the Spigot loader.
+     *
+     * @param projectId The project ID
+     * @return A new update checker instance for Spigot
+     */
+    public static ModrinthUpdateChecker spigot(String projectId) {
+        return new ModrinthUpdateChecker(projectId, "spigot");
+    }
+
+    /**
      * Checks for the latest version of the project and calls the onVersion callback with it.
      *
      * @return This update checker instance for method chaining
