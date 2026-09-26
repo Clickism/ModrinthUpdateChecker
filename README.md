@@ -164,7 +164,7 @@ public class ExamplePlugin extends JavaPlugin {
         ModrinthUpdateChecker.paper("my-modrinth-slug")
             // For paper, Minecraft version is likely not needed
             .onVersion(version -> {
-                if (getDescription().getVersion().equals(version)) {
+                if (getDescription().getVersion().equals(version.versionNumber()) {
                     getLogger().info("Example Plugin is up to date.");
                     return;
                 }
