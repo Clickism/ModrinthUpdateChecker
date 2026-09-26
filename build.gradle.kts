@@ -2,7 +2,6 @@ plugins {
     id("java")
     id("maven-publish")
     id("signing")
-    id("com.gradleup.nmcp.aggregation").version("1.6.2")
 }
 
 group = "de.clickism"
@@ -76,14 +75,6 @@ publishing {
     }
     signing {
         sign(publishing.publications["mavenJava"])
-    }
-}
-
-nmcpAggregation {
-    centralPortal {
-        username = findProperty("ossrhUsername") as String?
-        password = findProperty("ossrhPassword") as String?
-        publishingType = "USER_MANAGED"
     }
 }
 
