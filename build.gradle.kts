@@ -2,7 +2,7 @@ plugins {
     id("java")
     id("maven-publish")
     id("signing")
-    id("com.gradleup.nmcp").version("0.1.4")
+    id("com.gradleup.nmcp.aggregation").version("1.6.2")
 }
 
 group = "de.clickism"
@@ -79,7 +79,7 @@ publishing {
     }
 }
 
-nmcp {
+nmcpAggregation {
     centralPortal {
         username = findProperty("ossrhUsername") as String?
         password = findProperty("ossrhPassword") as String?
